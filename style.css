@@ -156,3 +156,16 @@ a { color: var(--accent); }
 .wk { display: grid; grid-template-columns: 78px minmax(0, 1fr); overflow-wrap: anywhere; gap: 12px; padding: 12px 14px; border-radius: 16px; background: var(--card2); border: 1px solid var(--line); }
 .wk.now { border-color: var(--accent); background: #1d3d33; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.anim { width: 100%; }
+.anim svg { width: 100%; display: block; }
+.anim-cap { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); padding: 0 8px 4px; }
+.anim-cap b { color: var(--accent); font-weight: 600; }
+#app.workout .anim { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 4px 2px; margin: 6px 0 8px; }
+.h1s { font-size: 24px; margin: 0 0 2px; }
+.tgt { margin: 8px 2px 10px; line-height: 1.35; }
+.sp { margin: 0 0 12px; padding: 12px; text-align: center; }
+.sp .val b { display: block; font-size: 34px; line-height: 1.1; letter-spacing: -0.02em; }
+.sp .val span { color: var(--muted); font-size: 13px; }
+.sp .grid2 { margin-top: 8px; gap: 8px; }
+.sp button { min-height: 56px; font-size: 28px; padding: 0; border-radius: 16px; }

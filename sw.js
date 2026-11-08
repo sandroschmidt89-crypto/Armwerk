@@ -1,6 +1,6 @@
 'use strict';
-const CACHE = 'armwerk-v2';
-const FILES = ['./', 'index.html', 'style.css', 'data.js', 'app.js', 'manifest.webmanifest',
+const CACHE = 'armwerk-v3';
+const FILES = ['./', 'index.html', 'style.css', 'data.js', 'anim.js', 'app.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

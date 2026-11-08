@@ -57,7 +57,7 @@ function modal({ title, body, actions }) {
     box.appendChild(b);
   });
   o.addEventListener('click', e => { if (e.target === o) o.remove(); });
-  document.body.appendChild(o);
+  document.body.appendChild(o); mountAnims(o);
   const f = $('button', box); if (f) f.focus();
   return o;
 }
@@ -116,6 +116,7 @@ function render() {
   $app.innerHTML = fn(V.arg);
   const tab = ({ home: 'home', exlist: 'exlist', exdetail: 'exlist', log: 'log', progress: 'progress', more: 'more', nutrition: 'more', settings: 'more', safety: 'more', plan: 'more' })[V.name];
   $tabs.querySelectorAll('.tab').forEach(b => b.getAttribute('data-v') === tab ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
+  mountAnims($app);
   if (inWo) startTick();
 }
 $tabs.innerHTML = '<div class="tabbar-inner">' + [['home', 'Start', ICON.home], ['exlist', 'Übungen', ICON.list], ['log', 'Verlauf', ICON.log], ['progress', 'Fortschritt', ICON.chart], ['more', 'Mehr', ICON.more]]
@@ -165,6 +166,7 @@ function exDetailHtml(id) {
   const li = a => '<ul class="bul">' + a.map(x => `<li>${esc(x)}</li>`).join('') + '</ul>';
   return `<h1>${esc(e.name)}</h1>
   <div class="row" style="flex-wrap:wrap;gap:6px"><span class="pill green">${esc(e.muscles.main.join(' · '))}</span>${e.muscles.assist.map(m => `<span class="pill">${esc(m)}</span>`).join('')}</div>
+  <div class="card" style="padding:10px 10px 6px">${animHtml(id, 230)}<p class="small muted" style="margin:4px 8px 6px">Schematische Darstellung der Bewegung. Blass = Start- und Endlage, grün = bewegter Arm. Tempo wie in der Anleitung.</p></div>
   <div class="card"><h3>Kurz erklärt</h3>${li(e.quick)}
   <a class="btn btn-block" href="${url}" target="_blank" rel="noopener noreferrer">▶ Videos zur Übung ansehen (YouTube-Suche)</a>
   <p class="small muted" style="margin:8px 0 0">Die komplette Anleitung steht unten in der App. Das Video ist nur eine Ergänzung und braucht Internet.</p></div>
@@ -297,10 +299,11 @@ VIEWS.workout = () => {
   if (W.phase === 'ex') {
     const st = W.steps[W.idx], ex = EX[st.ex], r = repsOf(ex, LEVELS[W.level - 1]), last = lastEntries(st.ex);
     const lastTxt = last ? 'Letztes Mal: ' + (ex.bw ? '' : last.entries.map(e => num(e.weight)).filter((v, i, a) => a.indexOf(v) === i).join('/') + ' kg · ') + last.entries.map(e => e.reps).join('/') + ' Wdh. (' + fmtD(last.session.ts).slice(4, 10) + ')' : 'Erste Durchführung';
-    return head() + `<div class="muted small">Übung ${TRAININGS[W.type].ex.indexOf(st.ex) + 1}/${TRAININGS[W.type].ex.length} · Satz ${st.set}/${st.of}${UNI[st.ex] ? ' · je Seite' : ''}</div><h1>${esc(ex.name)}</h1>
-    <div class="card target"><div class="muted small">Ziel</div><div class="big">${r[0]}–${r[1]} Wdh.${ex.bw ? '' : ' · ' + num(W.cur.weight) + ' kg'}</div><div class="muted small">${esc(lastTxt)}${W.curNote ? '<br>' + esc(W.curNote) : ''}</div></div>
-    <div class="card"><div class="stepper" style="margin-bottom:12px"><button data-a="reps" data-d="-1" aria-label="Eine Wiederholung weniger">−</button><div class="val"><b id="repv">${W.cur.reps}</b><span>Wiederholungen geschafft</span></div><button data-a="reps" data-d="1" aria-label="Eine Wiederholung mehr">+</button></div>
-    ${ex.bw ? '' : `<div class="stepper"><button data-a="wt" data-d="-1" aria-label="Gewicht verringern">−</button><div class="val"><b id="wtv">${num(W.cur.weight)}</b><span>kg pro Hand</span></div><button data-a="wt" data-d="1" aria-label="Gewicht erhöhen">+</button></div>`}</div>
+    const sp = (a, v, l, aria) => `<div class="card sp"><div class="val"><b id="${a === 'reps' ? 'repv' : 'wtv'}">${v}</b><span>${l}</span></div><div class="grid2"><button data-a="${a}" data-d="-1" aria-label="${aria} weniger">−</button><button data-a="${a}" data-d="1" aria-label="${aria} mehr">+</button></div></div>`;
+    return head() + `<div class="muted small">Übung ${TRAININGS[W.type].ex.indexOf(st.ex) + 1}/${TRAININGS[W.type].ex.length} · Satz ${st.set}/${st.of}${UNI[st.ex] ? ' · je Seite' : ''}</div><h1 class="h1s">${esc(ex.name)}</h1>
+    ${animHtml(st.ex, 175)}
+    <p class="tgt"><b>Ziel: ${r[0]}–${r[1]} Wdh.${ex.bw ? '' : ' · ' + num(W.cur.weight) + ' kg'}</b><br><span class="muted small">${esc(lastTxt)}${W.curNote ? ' · ' + esc(W.curNote) : ''}</span></p>
+    <div class="grid2">${sp('reps', W.cur.reps, 'Wiederholungen', 'Wiederholungen')}${ex.bw ? `<div class="card sp"><div class="val"><b style="font-size:20px">Körper-<br>gewicht</b><span>Höhe wählen</span></div></div>` : sp('wt', num(W.cur.weight), UNI[st.ex] ? 'kg je Seite' : 'kg pro Hand', 'Gewicht')}</div>
     <button class="btn-primary btn-big" data-a="setdone">Satz abgeschlossen ✓</button>
     <div class="card"><h3>Kurz erklärt</h3><ul class="bul" style="margin:0">${ex.quick.map(q => `<li>${esc(q)}</li>`).join('')}</ul><button class="btn-block btn-ghost" data-a="wdetail" style="margin-top:8px">Komplette Anleitung</button></div>
     <div class="row between" style="margin-top:4px"><button class="btn-ghost" data-a="skipex">Übung überspringen</button><span class="muted small">Pause danach: ${ex.rest} s</span></div>`;
