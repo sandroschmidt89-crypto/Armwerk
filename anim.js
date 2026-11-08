@@ -39,9 +39,9 @@ function sitMoving(p, o) {
 }
 
 function frontStatic(back) {
-  const shY = back ? 88 : 72, headY = back ? 99 : 57;
+  const shY = back ? 88 : 72, headY = back ? 79 : 57;
   const furn = ln([72, 120], [128, 120], C_FURN, 5) + ln([76, 124], [76, 156], C_FURN, 4) + ln([124, 124], [124, 156], C_FURN, 4) + ln([20, 158], [180, 158], C_FURN, 2);
-  const body = ln([92, 116], [92, 154], C_BODY, 7) + ln([108, 116], [108, 154], C_BODY, 7) + ln([100, 116], [100, shY], C_BODY, 9) + ln([83, shY], [117, shY], C_BODY, 7) + circ([100, headY], 9, back ? 'var(--bg)' : 'none', C_BODY, 4);
+  const body = ln([92, 116], [92, 154], C_BODY, 7) + ln([108, 116], [108, 154], C_BODY, 7) + ln([100, 116], [100, shY], C_BODY, 9) + ln([83, shY], [117, shY], C_BODY, 7) + circ([100, headY], 9, back ? 'var(--card)' : 'none', C_BODY, 4);
   return { shY, svg: furn + body };
 }
 function frontMoving(p, o) {
@@ -114,15 +114,15 @@ function wristMoving(p) {
 
 /* ---------- Definitionen je Übung ---------- */
 const ANIM = {
-  curl:  { view: 'Seitenansicht', kind: 'sit', db: 'end', A: { t: 0, ua: 4, fa: 4 }, B: { t: 0, ua: 6, fa: 150 }, tempo: [2, 1, 3, 0.5], names: ['Anheben', 'Halten', 'Absenken', 'Pause'] },
-  ham:   { view: 'Seitenansicht', kind: 'sit', db: 'bar', axis: 0, A: { t: 0, ua: 4, fa: 4 }, B: { t: 0, ua: 6, fa: 150 }, tempo: [2, 1, 3, 0.5], names: ['Anheben', 'Halten', 'Absenken', 'Pause'] },
-  tri:   { view: 'Seitenansicht', kind: 'sit', db: 'bar', axis: 90, A: { t: 0, ua: 178, fa: 178 }, B: { t: 0, ua: 172, fa: -40 }, tempo: [3, 0.5, 2, 1], names: ['Absenken', 'Halten', 'Strecken', 'Pause'], swap: true },
-  press: { view: 'Seitenansicht', kind: 'sit', db: 'end', A: { t: 0, ua: 35, fa: 178 }, B: { t: 0, ua: 176, fa: 178 }, tempo: [2, 0.5, 3, 0.5], names: ['Hochdrücken', 'Halten', 'Absenken', 'Pause'] },
-  lat:   { view: 'Frontansicht', kind: 'front', A: { ua: 6, fa: 4 }, B: { ua: 82, fa: 70 }, tempo: [2, 1, 3, 0.5], names: ['Anheben', 'Halten', 'Absenken', 'Pause'] },
-  rfly:  { view: 'Ansicht von hinten · Oberkörper vorgeneigt', kind: 'front', back: true, A: { ua: 4, fa: 4 }, B: { ua: 78, fa: 70 }, tempo: [2, 1, 3, 0.5], names: ['Öffnen', 'Halten', 'Absenken', 'Pause'] },
-  row:   { view: 'Seitenansicht · je Seite', kind: 'row', A: { ua: 0, fa: 0 }, B: { ua: -65, fa: -3 }, tempo: [2, 1, 3, 0.5], names: ['Heranziehen', 'Halten', 'Absenken', 'Pause'] },
-  push:  { view: 'Seitenansicht', kind: 'push', A: { d: 46 }, B: { d: 30 }, tempo: [3, 0.5, 2, 0.5], names: ['Absenken', 'Halten', 'Hochdrücken', 'Pause'], swap: true },
-  wrist: { view: 'Seitenansicht · je Seite', kind: 'wrist', A: { ha: 40 }, B: { ha: 140 }, tempo: [2, 1, 3, 0.5], names: ['Anheben', 'Halten', 'Absenken', 'Pause'] }
+  curl:  { view: 'Seitenansicht', kind: 'sit', db: 'end', A: { t: 0, ua: 4, fa: 4 }, B: { t: 0, ua: 6, fa: 150 }, tempo: [2, 1, 3, 0.5], names: ['Anheben', 'Halten', 'Absenken', 'Pause'], br: ['aus', 'aus', 'ein', 'ein'] },
+  ham:   { view: 'Seitenansicht', kind: 'sit', db: 'bar', axis: 0, A: { t: 0, ua: 4, fa: 4 }, B: { t: 0, ua: 6, fa: 150 }, tempo: [2, 1, 3, 0.5], names: ['Anheben', 'Halten', 'Absenken', 'Pause'], br: ['aus', 'aus', 'ein', 'ein'] },
+  tri:   { view: 'Seitenansicht', kind: 'sit', db: 'bar', axis: 90, A: { t: 0, ua: 178, fa: 178 }, B: { t: 0, ua: 172, fa: 320 }, tempo: [3, 0.5, 2, 1], names: ['Absenken', 'Halten', 'Strecken', 'Pause'], swap: true, br: ['ein', 'ein', 'aus', 'aus'] },
+  press: { view: 'Seitenansicht', kind: 'sit', db: 'end', A: { t: 0, ua: 35, fa: 178 }, B: { t: 0, ua: 176, fa: 178 }, tempo: [2, 0.5, 3, 0.5], names: ['Hochdrücken', 'Halten', 'Absenken', 'Pause'], br: ['aus', 'aus', 'ein', 'ein'] },
+  lat:   { view: 'Frontansicht', kind: 'front', A: { ua: 6, fa: 4 }, B: { ua: 82, fa: 70 }, tempo: [2, 1, 3, 0.5], names: ['Anheben', 'Halten', 'Absenken', 'Pause'], br: ['aus', 'aus', 'ein', 'ein'] },
+  rfly:  { view: 'Ansicht von hinten · Oberkörper vorgeneigt', kind: 'front', back: true, A: { ua: 4, fa: 4 }, B: { ua: 78, fa: 70 }, tempo: [2, 1, 3, 0.5], names: ['Öffnen', 'Halten', 'Absenken', 'Pause'], br: ['aus', 'aus', 'ein', 'ein'] },
+  row:   { view: 'Seitenansicht · je Seite', kind: 'row', A: { ua: 0, fa: 0 }, B: { ua: -65, fa: -3 }, tempo: [2, 1, 3, 0.5], names: ['Heranziehen', 'Halten', 'Absenken', 'Pause'], br: ['aus', 'aus', 'ein', 'ein'] },
+  push:  { view: 'Seitenansicht', kind: 'push', A: { d: 46 }, B: { d: 30 }, tempo: [3, 0.5, 2, 0.5], names: ['Absenken', 'Halten', 'Hochdrücken', 'Pause'], swap: true, br: ['ein', 'ein', 'aus', 'aus'] },
+  wrist: { view: 'Seitenansicht · je Seite', kind: 'wrist', A: { ha: 40 }, B: { ha: 140 }, tempo: [2, 1, 3, 0.5], names: ['Anheben', 'Halten', 'Absenken', 'Pause'], br: null }
 };
 
 function lerpP(A, B, e) { const o = {}; for (const k in A) o[k] = A[k] + (B[k] - A[k]) * e; return o; }
@@ -167,15 +167,17 @@ function sceneSvg(def, s, still) {
 
 function animHtml(id, h) {
   const d = ANIM[id]; if (!d) return '';
-  return `<div class="anim" data-anim="${id}"><svg viewBox="4 20 190 145" style="height:${h || 190}px" role="img" aria-label="Animation: ${d.view}"></svg><div class="anim-cap"><span>${d.view}</span><b class="ph"></b></div></div>`;
+  return `<div class="anim" data-anim="${id}"><svg viewBox="4 8 190 157" style="height:${h || 190}px" role="img" aria-label="Animation: ${d.view}"></svg><div class="anim-cap"><span>${d.view}</span><b class="ph"></b></div><div class="breath" aria-live="off"><i></i><span></span></div></div>`;
 }
 const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 function mountAnims(root) {
   (root || document).querySelectorAll('[data-anim]:not([data-on])').forEach(el => {
     el.setAttribute('data-on', '1');
-    const def = ANIM[el.dataset.anim], svg = el.querySelector('svg'), ph = el.querySelector('.ph'), t0 = performance.now();
+    const def = ANIM[el.dataset.anim], svg = el.querySelector('svg'), ph = el.querySelector('.ph'), bt = el.querySelector('.breath'), t0 = performance.now();
+    const setBreath = k => { if (!bt) return; const sp = bt.querySelector('span'); bt.dataset.s = k || 'neutral'; sp.textContent = k === 'ein' ? 'Einatmen' : k === 'aus' ? 'Ausatmen' : 'Ruhig weiteratmen'; };
     if (!def) return;
-    if (REDUCED) { svg.innerHTML = sceneSvg(def, 1); ph.textContent = 'Start blass · Ende kräftig'; return; }
+    if (REDUCED) { svg.innerHTML = sceneSvg(def, 1); ph.textContent = 'Start blass · Ende kräftig'; setBreath(null); if (bt && def.br) { bt.querySelector('span').textContent = 'Ausatmen bei Anstrengung'; } return; }
+    setBreath(def.br ? def.br[0] : null);
     let last = 0;
     const frame = ts => {
       if (!el.isConnected) return;
@@ -185,6 +187,7 @@ function mountAnims(root) {
         svg.innerHTML = sceneSvg(def, r.s);
         const nm = def.names[r.ph], sec = r.ph < 3 ? def.tempo[r.ph] : 0;
         ph.textContent = r.ph === 1 || r.ph === 3 ? nm : nm + ' · ' + sec + ' s';
+        const bk = def.br ? def.br[r.ph] : null; if (bt && bt.dataset.s !== (bk || 'neutral')) setBreath(bk);
       }
       requestAnimationFrame(frame);
     };

@@ -169,3 +169,13 @@ a { color: var(--accent); }
 .sp .val span { color: var(--muted); font-size: 13px; }
 .sp .grid2 { margin-top: 8px; gap: 8px; }
 .sp button { min-height: 56px; font-size: 28px; padding: 0; border-radius: 16px; }
+
+.anim { position: relative; }
+.breath { position: absolute; top: 8px; right: 10px; display: flex; align-items: center; gap: 8px; background: var(--card2); border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px 5px 8px; font-size: 14px; font-weight: 600; }
+.breath i { display: block; width: 18px; height: 18px; border-radius: 50%; background: #6fb5ff; transform: scale(1); transition: transform .9s ease-in-out, background .3s; }
+.breath[data-s="ein"] i { transform: scale(1.25); background: #6fb5ff; }
+.breath[data-s="aus"] i { transform: scale(0.5); background: var(--accent); }
+.breath[data-s="neutral"] i { background: var(--muted); transform: scale(0.8); }
+.breath[data-s="ein"] span { color: #6fb5ff; }
+.breath[data-s="aus"] span { color: var(--accent); }
+.breath[data-s="neutral"] span { color: var(--muted); font-weight: 500; }
