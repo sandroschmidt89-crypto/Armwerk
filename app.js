@@ -8,12 +8,17 @@ const $app = document.getElementById('app');
 const $tabs = document.getElementById('tabbar');
 
 /* ---------- Speicher ---------- */
-const defaults = () => ({ v: 1, sessions: [], level: 1, levelProg: 0, body: [], startTs: null, intro: false, prefs: { sound: true, vibrate: true } });
+const APP_VERSION = '1.2';
+const defaults = () => ({ v: 1, sessions: [], level: 1, levelProg: 0, body: [], startTs: null, intro: false, weights: [1, 2], devExportTs: 0, prefs: { sound: true, vibrate: true } });
 let S = load();
+function cleanWeights(a) {
+  const o = [...new Set((Array.isArray(a) ? a : []).map(Number).filter(x => isFinite(x) && x >= 0.5 && x <= 60).map(x => Math.round(x * 10) / 10))].sort((x, y) => x - y);
+  return o.length ? o : [1, 2];
+}
 function load() {
   try {
     const r = JSON.parse(localStorage.getItem(KEY));
-    if (r && Array.isArray(r.sessions)) return Object.assign(defaults(), r, { prefs: Object.assign(defaults().prefs, r.prefs || {}) });
+    if (r && Array.isArray(r.sessions)) { const o = Object.assign(defaults(), r, { prefs: Object.assign(defaults().prefs, r.prefs || {}) }); o.weights = cleanWeights(r.weights || [1, 2]); return o; }
   } catch (e) {}
   return defaults();
 }
@@ -24,6 +29,7 @@ function loadDraft() { try { return JSON.parse(localStorage.getItem(DRAFT)); } c
 /* ---------- Helfer ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const fmtD = ts => new Date(ts).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+const shortD = ts => new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
 const fmtDT = ts => new Date(ts).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const fmtKg = n => (Math.round(n * 10) / 10).toString().replace('.', ',') + ' kg';
 const num = n => (Math.round(n * 10) / 10).toString().replace('.', ',');
@@ -74,18 +80,36 @@ function lastEntries(exId) {
   }
   return null;
 }
-function suggestWeight(exId) {
-  const ex = EX[exId]; if (ex.bw) return { w: 0, note: '' };
-  const l = lastEntries(exId);
-  if (!l) return { w: ex.startWeight, note: 'Startgewicht – lieber zu leicht als zu schwer.' };
+/* Verfügbare Hanteln (pro Hand) */
+const avail = () => cleanWeights(S.weights);
+const nextUp = w => avail().find(x => x > w + 1e-9);
+const nextDown = w => [...avail()].reverse().find(x => x < w - 1e-9);
+function nearestStart(sw) { const a = avail(), b = a.filter(x => x <= sw + 1e-9); return b.length ? b[b.length - 1] : a[0]; }
+const REP_CAP = 15;
+/* Vorschlag aus dem letzten Training – nur mit Gewichten, die du hast.
+   Steigerung erst, wenn das Ziel sauber erreicht wurde. Bei großen Sprüngen (>34 %) erst Wiederholungen bis 15. */
+function suggestWeight(exId, L = lvl()) {
+  const ex = EX[exId], r = repsOf(ex, L), l = lastEntries(exId);
+  if (ex.bw) { const lr = l ? Math.min(...l.entries.map(e => e.reps)) : r[1]; return { w: 0, reps: Math.max(r[0], Math.min(lr, 20)), range: r, note: '' }; }
+  if (!l) return { w: nearestStart(ex.startWeight), reps: r[1], range: r, note: 'Startgewicht – lieber zu leicht als zu schwer.' };
   const top = Math.max(...l.entries.map(e => e.weight));
-  const reps = repsOf(ex);
-  const allTop = l.entries.every(e => e.reps >= reps[1]);
-  const hard = l.entries.some(e => e.effort === 'hart');
-  const tol = l.session.tolerance;
-  if (tol === 'stark' || tol === 'schmerz') return { w: Math.max(ex.startWeight, top - ex.step), note: 'Nach starkem Muskelkater bewusst etwas leichter.' };
-  if (allTop && !hard && tol === 'gut') return { w: top + ex.step, note: 'Alle Wiederholungen geschafft und gut vertragen – kleine Steigerung möglich.' };
-  return { w: top, note: 'Gewicht beibehalten.' };
+  const es = l.entries.filter(e => e.weight === top);
+  const lastReps = Math.min(...es.map(e => e.reps));
+  const hard = es.some(e => e.effort === 'hart');
+  const tol = l.session.tolerance, up = nextUp(top), down = nextDown(top);
+  if (tol === 'stark' || tol === 'schmerz') {
+    if (down) return { w: down, reps: r[1], range: r, note: `Nach starkem Muskelkater bewusst leichter (${num(down)} kg).` };
+    return { w: top, reps: Math.max(r[0], Math.min(lastReps, r[1])), range: r, note: 'Nach starkem Muskelkater vorsichtiger: lieber weniger Wiederholungen.' };
+  }
+  const small = !!up && up / top <= 1.34;
+  const goal = small ? r[1] : Math.max(r[1], REP_CAP);
+  const done = lastReps >= goal && !hard && tol === 'gut';
+  if (done && up) return { w: up, reps: r[0], range: r, note: `Alles geschafft und gut vertragen – nächste Hantel: ${num(up)} kg, starte mit ${r[0]} Wdh.` };
+  let note = 'Gewicht beibehalten.';
+  if (done) note = 'Höchste Hantel erreicht und alles geschafft. Für mehr Steigerung unter Mehr → Einstellungen eine neue Hantel ergänzen.';
+  else if (!up) note = 'Keine schwerere Hantel hinterlegt – steigere die Wiederholungen.';
+  else if (!small) note = `Nächste Hantel (${num(up)} kg) ist ein großer Sprung – erst bis ${goal} saubere Wiederholungen steigern.`;
+  return { w: top, reps: Math.max(r[0], Math.min(lastReps, goal)), range: [r[0], goal], note };
 }
 function estMinutes(type, L = lvl()) {
   let s = 120; // Aufwärmen
@@ -218,9 +242,9 @@ VIEWS.progress = () => {
   const done = sessionsDone();
   const ex = EX[progEx];
   const per = done.map(s => ({ s, es: s.entries.filter(e => e.ex === progEx) })).filter(q => q.es.length);
-  const wPts = per.map(q => ({ x: fmtD(q.s.ts).slice(4, 10), y: Math.max(...q.es.map(e => e.weight)) }));
-  const rPts = per.map(q => ({ x: fmtD(q.s.ts).slice(4, 10), y: q.es.reduce((a, e) => a + e.reps, 0) / q.es.length }));
-  const body = [...S.body].sort((a, b) => a.ts - b.ts).map(b => ({ x: fmtD(b.ts).slice(4, 10), y: b.kg }));
+  const wPts = per.map(q => ({ x: shortD(q.s.ts), y: Math.max(...q.es.map(e => e.weight)) }));
+  const rPts = per.map(q => ({ x: shortD(q.s.ts), y: q.es.reduce((a, e) => a + e.reps, 0) / q.es.length }));
+  const body = [...S.body].sort((a, b) => a.ts - b.ts).map(b => ({ x: shortD(b.ts), y: b.kg }));
   const opts = Object.keys(EX).map(id => `<option value="${id}" ${id === progEx ? 'selected' : ''}>${esc(EX[id].name)}</option>`).join('');
   const wk = weekKey(Date.now()), recent = done.filter(s => s.ts >= wk - 21 * 864e5).length;
   return `<h1>Fortschritt</h1>
@@ -244,7 +268,7 @@ VIEWS.plan = () => {
   return `<button class="back" data-a="go" data-v="more">‹ Mehr</button><h1>8-Wochen-Plan</h1>
   <p class="muted">Du trainierst 2× pro Woche (z. B. Mo und Do), abwechselnd A und B, mit mindestens 48 Stunden Pause. ${S.startTs ? `Du bist in Woche ${wk}.` : ''}</p>
   <div class="weekgrid">${rows}</div>
-  <div class="card"><h3>So steigt die Belastung</h3><ul class="bul"><li>Nach jeder Einheit gibst du am nächsten Trainingstag an, wie du sie vertragen hast.</li><li>Nur nach vier gut vertragenen Einheiten geht es zur nächsten Stufe.</li><li>Bei deutlichem Muskelkater bleibt die Stufe gleich, bei starkem Muskelkater oder Schmerzen gibt es leichtere Gewichte und eine Pause.</li><li>Gewichte steigen nur in kleinen Schritten (0,5 kg) und nur, wenn alle Wiederholungen sauber waren.</li><li>Die Stufen dienen als Orientierung. Wenn du länger Pause machen musst, bleibst du einfach auf deiner Stufe.</li></ul></div>
+  <div class="card"><h3>So steigt die Belastung</h3><ul class="bul"><li>Nach jeder Einheit gibst du am nächsten Trainingstag an, wie du sie vertragen hast.</li><li>Nur nach vier gut vertragenen Einheiten geht es zur nächsten Stufe.</li><li>Bei deutlichem Muskelkater bleibt die Stufe gleich, bei starkem Muskelkater oder Schmerzen gibt es leichtere Gewichte und eine Pause.</li><li>Gewichte steigen nur auf die nächste Hantel, die du hast (Mehr → Einstellungen), und nur, wenn alle Wiederholungen sauber waren. Bei großen Sprüngen (z. B. 1 → 2 kg) steigerst du erst die Wiederholungen bis 15.</li><li>Die Stufen dienen als Orientierung. Wenn du länger Pause machen musst, bleibst du einfach auf deiner Stufe.</li></ul></div>
   <div class="card"><h3>Dein Einstieg</h3><p>Nach deinem früheren Versuch mit vier Tagen Muskelkater startest du mit sehr leichten Gewichten, nur einem Satz und bewusst weit weg vom Muskelversagen. Das ist Absicht.</p></div>
   <div class="grid2"><div class="card"><h3>Training A</h3><ul class="bul">${TRAININGS.A.ex.map(i => `<li>${esc(EX[i].name)}</li>`).join('')}</ul></div><div class="card"><h3>Training B</h3><ul class="bul">${TRAININGS.B.ex.map(i => `<li>${esc(EX[i].name)}</li>`).join('')}</ul></div></div>`;
 };
@@ -270,9 +294,18 @@ VIEWS.settings = () => `<button class="back" data-a="go" data-v="more">‹ Mehr<
 <label class="sw"><span>Vibration (falls unterstützt)</span><input type="checkbox" data-a="pref" data-k="vibrate" ${S.prefs.vibrate ? 'checked' : ''}></label>
 <button class="btn-block" data-a="testsound">Signal testen</button>
 <p class="small muted" style="margin:10px 0 0">Hinweis iPhone: Der Ton ist aus, wenn der Stumm-Schalter aktiv ist. Safari auf dem iPhone unterstützt keine Vibration, dort hilft der Ton.</p></div>
+<h2>Meine Hanteln</h2><div class="card"><p class="muted small">Gewicht pro Hand. Vorschläge und die Plus/Minus-Tasten im Training nutzen nur diese Gewichte. Zum Entfernen antippen.</p>
+<div class="chips">${avail().map(w => `<button class="chip" data-a="wdel" data-w="${w}" aria-label="${num(w)} kg entfernen">${num(w)} kg ✕</button>`).join('')}</div>
+<div class="row" style="margin-top:14px"><input id="wadd" type="text" inputmode="decimal" placeholder="Neue Hantel, z. B. 2,5" aria-label="Neue Hantel in kg"><button class="btn-primary" data-a="wadd">Hinzufügen</button></div>
+<p class="small muted" style="margin:14px 0 6px">Verstellbare Hantel: Bereich auf einmal hinzufügen</p>
+<div class="grid3"><input id="wfrom" type="text" inputmode="decimal" placeholder="von kg" aria-label="von kg"><input id="wto" type="text" inputmode="decimal" placeholder="bis kg" aria-label="bis kg"><input id="wstep" type="text" inputmode="decimal" placeholder="Schritt" aria-label="Schrittweite kg"></div>
+<button class="btn-block" data-a="wrange" style="margin-top:10px">Bereich hinzufügen</button></div>
+<h2>Weiterentwicklung mit Claude</h2><div class="card"><p class="muted small">Erstellt eine Datei mit allen neuen Einträgen, deinem aktuellen Stand und einer fertigen Anweisung. Hänge sie in einem neuen Chat an Claude an.</p>
+<p class="small" style="margin:0 0 10px">${S.devExportTs ? 'Letzter Export: ' + fmtDT(S.devExportTs) + ' · ' : 'Noch nie exportiert · '}<b>${S.sessions.filter(x => x.ts > (S.devExportTs || 0)).length} neue Einheiten</b></p>
+<button class="btn-primary btn-block" data-a="devexport">Export für Claude erstellen</button></div>
 <h2>Daten</h2><div class="card"><p class="muted small">Alle Daten liegen nur auf diesem Gerät. Sichere sie regelmäßig als Datei.</p>
 <div class="stack"><button class="btn-block" data-a="export">Daten exportieren (JSON)</button><button class="btn-block" data-a="import">Daten importieren (JSON)</button><input id="file" type="file" accept="application/json,.json" class="hide"><button class="btn-danger btn-block" data-a="reset">Alle Daten löschen</button></div></div>
-<p class="small muted">Armwerk 1.0 · ${S.sessions.length} gespeicherte Einheiten</p>`;
+<p class="small muted">Armwerk ${APP_VERSION} · ${S.sessions.length} gespeicherte Einheiten</p>`;
 
 /* ---------- Training ---------- */
 function buildSteps(type) {
@@ -287,9 +320,10 @@ function startWorkout(type) {
   saveDraft(); requestWake(); nav('workout');
 }
 function prepCur() {
-  const st = W.steps[W.idx], ex = EX[st.ex], r = repsOf(ex, LEVELS[W.level - 1]);
-  W.cur = { weight: suggestWeight(st.ex).w, reps: r[1] };
-  W.curNote = suggestWeight(st.ex).note;
+  const st = W.steps[W.idx], L = LEVELS[W.level - 1], sg = suggestWeight(st.ex, L), prev = W.entries[W.entries.length - 1];
+  if (prev && prev.ex === st.ex) { W.cur = { weight: prev.weight, reps: prev.reps }; W.curNote = 'Wie im Satz davor.'; }
+  else { W.cur = { weight: sg.w, reps: sg.reps }; W.curNote = sg.note; }
+  W.curRange = sg.range;
 }
 VIEWS.workout = () => {
   if (!W) return VIEWS.home();
@@ -297,12 +331,12 @@ VIEWS.workout = () => {
   const head = (cancel = true) => `<div class="wo-head"><span class="wo-top">${esc(TRAININGS[W.type].name)} · ${Math.min(W.idx + 1, total)}/${total}</span>${cancel ? '<button data-a="abort" class="btn-danger" style="min-height:46px;padding:8px 14px">Schmerzen / Abbrechen</button>' : ''}</div><div class="progress" style="margin:10px 0 14px"><i style="width:${Math.round(W.idx / total * 100)}%"></i></div>`;
   if (W.phase === 'warmup') return head() + `<h1>Aufwärmen</h1><p class="muted">Etwa 2 Minuten. Das macht Gelenke und Muskeln bereit, besonders im Büroalltag.</p><div class="card"><ol class="steps">${WARMUP.map(x => `<li>${esc(x)}</li>`).join('')}</ol></div><div class="stack"><button class="btn-primary btn-big" data-a="warmdone">Aufwärmen fertig</button><button class="btn-block btn-ghost" data-a="warmdone">Überspringen</button></div>`;
   if (W.phase === 'ex') {
-    const st = W.steps[W.idx], ex = EX[st.ex], r = repsOf(ex, LEVELS[W.level - 1]), last = lastEntries(st.ex);
-    const lastTxt = last ? 'Letztes Mal: ' + (ex.bw ? '' : last.entries.map(e => num(e.weight)).filter((v, i, a) => a.indexOf(v) === i).join('/') + ' kg · ') + last.entries.map(e => e.reps).join('/') + ' Wdh. (' + fmtD(last.session.ts).slice(4, 10) + ')' : 'Erste Durchführung';
+    const st = W.steps[W.idx], ex = EX[st.ex], r = W.curRange || repsOf(ex, LEVELS[W.level - 1]), last = lastEntries(st.ex);
+    const lastTxt = last ? 'Letztes Mal: ' + (ex.bw ? '' : last.entries.map(e => num(e.weight)).filter((v, i, a) => a.indexOf(v) === i).join('/') + ' kg · ') + last.entries.map(e => e.reps).join('/') + ' Wdh. (' + shortD(last.session.ts) + ')' : 'Erste Durchführung';
     const sp = (a, v, l, aria) => `<div class="card sp"><div class="val"><b id="${a === 'reps' ? 'repv' : 'wtv'}">${v}</b><span>${l}</span></div><div class="grid2"><button data-a="${a}" data-d="-1" aria-label="${aria} weniger">−</button><button data-a="${a}" data-d="1" aria-label="${aria} mehr">+</button></div></div>`;
     return head() + `<div class="muted small">Übung ${TRAININGS[W.type].ex.indexOf(st.ex) + 1}/${TRAININGS[W.type].ex.length} · Satz ${st.set}/${st.of}${UNI[st.ex] ? ' · je Seite' : ''}</div><h1 class="h1s">${esc(ex.name)}</h1>
     ${animHtml(st.ex, 175)}
-    <p class="tgt"><b>Ziel: ${r[0]}–${r[1]} Wdh.${ex.bw ? '' : ' · ' + num(W.cur.weight) + ' kg'}</b><br><span class="muted small">${esc(lastTxt)}${W.curNote ? ' · ' + esc(W.curNote) : ''}</span></p>
+    <p class="tgt"><b>Ziel: ${r[0]}–${r[1]} Wdh.</b><br><span class="muted small">${esc(lastTxt)}${W.curNote ? ' · ' + esc(W.curNote) : ''}</span></p>
     <div class="grid2">${sp('reps', W.cur.reps, 'Wiederholungen', 'Wiederholungen')}${ex.bw ? `<div class="card sp"><div class="val"><b style="font-size:20px">Körper-<br>gewicht</b><span>Höhe wählen</span></div></div>` : sp('wt', num(W.cur.weight), UNI[st.ex] ? 'kg je Seite' : 'kg pro Hand', 'Gewicht')}</div>
     <button class="btn-primary btn-big" data-a="setdone">Satz abgeschlossen ✓</button>
     <div class="card"><h3>Kurz erklärt</h3><ul class="bul" style="margin:0">${ex.quick.map(q => `<li>${esc(q)}</li>`).join('')}</ul><button class="btn-block btn-ghost" data-a="wdetail" style="margin-top:8px">Komplette Anleitung</button></div>
@@ -374,6 +408,86 @@ function afterLastSet() {
   startRest(EX[W.steps[W.idx - 1].ex].rest);
 }
 
+/* ---------- Export für Claude ---------- */
+function deliverText(text, name) {
+  S.devExportTs = Date.now(); save();
+  const blob = new Blob([text], { type: 'text/markdown' });
+  try {
+    const f = new File([blob], name, { type: 'text/markdown' });
+    if (navigator.canShare && navigator.canShare({ files: [f] }) && /iPhone|iPad/.test(navigator.userAgent)) { navigator.share({ files: [f], title: 'Armwerk für Claude' }).catch(() => {}); return; }
+  } catch (e) {}
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast('Datei erstellt');
+}
+function copyText(text) {
+  S.devExportTs = Date.now(); save();
+  const fallback = () => { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} t.remove(); toast(ok ? 'Text kopiert' : 'Kopieren nicht möglich – bitte „Als Datei“ nutzen'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast('Text kopiert'), fallback); else fallback();
+}
+function devExportText(note) {
+  const since = S.devExportTs || 0, now = new Date();
+  const L = lvl(), sess = [...S.sessions].sort((a, b) => a.ts - b.ts), fresh = sess.filter(x => x.ts > since);
+  const line = e => `${num(e.weight)} kg × ${e.reps}${e.effort ? ' (' + e.effort + ')' : ''}`;
+  const sessMd = x => {
+    const by = {}; x.entries.forEach(e => (by[e.ex] = by[e.ex] || []).push(e));
+    return `### ${fmtDT(x.ts)} · ${TRAININGS[x.type].name} · Stufe ${x.level} · ${x.durationSec ? Math.round(x.durationSec / 60) + ' Min' : '?'}${x.completed ? '' : ' · ABGEBROCHEN'}\nVerträglichkeit (am Folgetag angegeben): ${x.tolerance ? TOLERANCE[x.tolerance].label : 'noch nicht angegeben'}\n` +
+      Object.entries(by).map(([id, es]) => `- ${EX[id].name} (${id}): ${es.map((e, i) => (EX[id].bw ? e.reps + ' Wdh.' : line(e))).join(' | ')}`).join('\n');
+  };
+  const hist = Object.keys(EX).map(id => {
+    const h = sess.filter(x => x.entries.some(e => e.ex === id)).map(x => `${new Date(x.ts).toISOString().slice(0, 10)}: ${x.entries.filter(e => e.ex === id).map(e => EX[id].bw ? e.reps + ' Wdh.' : num(e.weight) + '×' + e.reps).join(', ')}`);
+    return hist_ok(id, h);
+  }).filter(Boolean).join('\n');
+  function hist_ok(id, h) { return h.length ? `- ${EX[id].name} (${id}): ${h.join(' · ')}` : ''; }
+  const cat = Object.entries(TRAININGS).map(([k, t]) => `**${t.name}** (${t.focus})\n` + t.ex.map(id => { const e = EX[id]; return `- \`${id}\` ${e.name} · ${e.muscles.main.join(', ')} · Start ${e.bw ? 'Körpergewicht' : num(e.startWeight) + ' kg'} · Pause ${e.rest} s${UNI[id] ? ' · einseitig' : ''}${e.cap ? ' · max. ' + e.cap + ' Satz' : ''}`; }).join('\n')).join('\n\n');
+  const body = [...S.body].sort((a, b) => a.ts - b.ts);
+  return `# Armwerk – Export für Claude
+Erstellt: ${now.toLocaleString('de-DE')} · App-Version ${APP_VERSION}
+
+## Anweisung an Claude
+Du bist mein Entwickler und Trainingsberater für meine private Home-Workout-App „Armwerk“ (PWA aus HTML, CSS und JavaScript, gehostet über GitHub Pages, genutzt auf dem iPhone, offline, ohne Konto). Diese Datei enthält alle Informationen, die du brauchst. Antworte auf Deutsch, mit „du“ und knapp.
+
+**Dateien der App:** index.html, style.css, data.js (Übungen, Stufen, Aufwärmen), anim.js (Strichfiguren-Animationen mit Start-/Endpose und Atemhinweis), app.js (Logik), sw.js (Offline-Cache), manifest.webmanifest, Icons (alle im Hauptordner). Wenn du den Quellcode nicht siehst, bitte mich zuerst, das Repository als ZIP anzuhängen. Plane keine Änderungen auf Verdacht.
+
+**Deine Aufgaben:**
+1. Lies „Meine Notizen“ und setze die Wünsche um. Wenn etwas unklar ist, frage kurz nach, bevor du etwas baust.
+2. Werte die neuen Einheiten aus: Wiederholungen, Gewichte, Anstrengung, Verträglichkeit, Dauer. Sag knapp, ob Plan, Stufen oder Vorschlagslogik angepasst werden sollten, und begründe es.
+3. Berücksichtige ausschließlich meine verfügbaren Hanteln (siehe unten).
+4. Bei neuen Übungen: ergänze data.js (Name, Muskeln, Ausgangsposition, Schritte, Atmung, Fehler, Sicherheit, Start, Pause, Gewichtsangabe) und anim.js (Animation), und nimm sie in Training A oder B auf, ohne die 20 Minuten zu sprengen.
+5. Liefere geänderte Dateien vollständig, teste sie (Browser-Test, Timer, Ablauf, Speicherung) und erhöhe in sw.js die CACHE-Version. Sage mir genau, welche Dateien ich im Repository ersetzen muss.
+
+**Rahmenbedingungen (nicht verletzen):** 2 Einheiten pro Woche, mindestens 48 Std. Abstand, maximal 20 Minuten pro Einheit, nur zu Hause, keine Bank, keine Geräte. Ziel: Muskelaufbau Arme und Schultern, ausgewogener Oberkörper. Wiedereinsteiger mit Büroalltag, 187 cm, ca. ${body.length ? num(body[body.length - 1].kg) : '90'} kg. Gelegentliche Schmerzen im rechten Knie und im unteren/mittleren Rücken: keine Kniebeugen, Ausfallschritte oder Kreuzheben, kein Hohlkreuz, kein Muskelversagen, keine ruckartigen Bewegungen. Bei Schmerzen darf die App nie zum Weitermachen auffordern. Keine Diagnosen. Wenige Funktionen, jede richtig umgesetzt.
+
+## Meine Notizen / Wünsche
+${note && note.trim() ? note.trim() : '(keine)'}
+
+## Aktueller Stand
+- Stufe ${S.level} von 4 („${L.title}“, ${L.sets} Satz/Sätze, ${L.reps[0]}–${L.reps[1]} Wdh.), gut vertragen in dieser Stufe: ${S.levelProg}/4
+- Einheiten gesamt: ${sess.filter(x => x.completed).length} (abgeschlossen), davon neu seit letztem Export: ${fresh.length}
+- Startdatum: ${S.startTs ? new Date(S.startTs).toISOString().slice(0, 10) : 'noch nicht gestartet'}
+- **Verfügbare Hanteln (pro Hand):** ${avail().map(w => num(w) + ' kg').join(', ')}
+- Körpergewicht: ${body.length ? body.map(b => new Date(b.ts).toISOString().slice(0, 10) + ' ' + num(b.kg) + ' kg').join(' · ') : 'keine Einträge'}
+
+## Regeln der Vorschlagslogik (aktuell in app.js)
+- Stufe steigt erst nach 4 gut vertragenen Einheiten (Verträglichkeit wird am nächsten Trainingstag abgefragt). Starker Muskelkater oder Schmerz setzt den Zähler zurück.
+- Gewicht steigt nur auf die nächste verfügbare Hantel, wenn alle Wiederholungen das Ziel erreicht haben, die Anstrengung nicht „hart“ war und die Einheit gut vertragen wurde. Bei Sprüngen über 34 % (z. B. 1 → 2 kg) zählt erst 15 Wiederholungen als Ziel.
+- Ohne schwerere Hantel gilt: Gewicht gleich lassen, Wiederholungen steigern bis 15.
+
+## Neue Einheiten seit letztem Export (${fresh.length})
+${fresh.length ? fresh.map(sessMd).join('\n\n') : '(keine)'}
+
+## Verlauf je Übung (alle Einheiten, Gewicht×Wiederholungen)
+${hist || '(keine Daten)'}
+
+## Übungskatalog (aktuell in der App)
+${cat}
+
+## Rohdaten (JSON, für Import in die App)
+\`\`\`json
+${JSON.stringify({ app: 'armwerk', exportedAt: now.toISOString(), data: S })}
+\`\`\`
+`;
+}
+
 /* ---------- Aktionen ---------- */
 const A = {
   tab: d => nav(d.v),
@@ -401,7 +515,11 @@ const A = {
   },
   warmdone: () => { unlockAudio(); W.phase = 'ex'; prepCur(); saveDraft(); render(); },
   reps: d => { W.cur.reps = Math.max(0, Math.min(40, W.cur.reps + +d.d)); $('#repv').textContent = W.cur.reps; saveDraft(); },
-  wt: d => { const ex = EX[W.steps[W.idx].ex], st = ex.step || .5; W.cur.weight = Math.max(0, Math.round((W.cur.weight + d.d * st) * 10) / 10); $('#wtv').textContent = num(W.cur.weight); saveDraft(); },
+  wt: d => {
+    const cur = W.cur.weight, list = [...new Set([...avail(), cur])].sort((a, b) => a - b), k = list.indexOf(cur), nx = list[k + +d.d];
+    if (nx === undefined) return toast(+d.d > 0 ? 'Keine schwerere Hantel hinterlegt (Mehr → Einstellungen)' : 'Keine leichtere Hantel hinterlegt');
+    W.cur.weight = nx; $('#wtv').textContent = num(nx); saveDraft();
+  },
   wdetail: () => modal({ title: EX[W.steps[W.idx].ex].name, body: exDetailHtml(EX[W.steps[W.idx].ex].id).replace(/^<h1>.*?<\/h1>/, ''), actions: [{ label: 'Schließen', primary: true }] }),
   setdone: () => {
     unlockAudio();
@@ -451,6 +569,36 @@ const A = {
     } catch (e) {}
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast('Export erstellt');
+  },
+  wadd: () => {
+    const v = parseFloat(($('#wadd').value || '').replace(',', '.'));
+    if (!(v >= 0.5 && v <= 60)) return toast('Bitte ein Gewicht zwischen 0,5 und 60 kg eingeben');
+    S.weights = cleanWeights([...S.weights, v]); save(); render(); toast(num(v) + ' kg hinzugefügt');
+  },
+  wdel: d => {
+    if (avail().length <= 1) return toast('Mindestens eine Hantel muss bleiben');
+    S.weights = cleanWeights(S.weights.filter(x => Math.abs(x - +d.w) > 1e-9)); save(); render();
+  },
+  wrange: () => {
+    const g = id => parseFloat(($(id).value || '').replace(',', '.'));
+    const a = g('#wfrom'), b = g('#wto'), st = g('#wstep') || 1;
+    if (!(a >= 0.5 && b >= a && b <= 60 && st >= 0.25)) return toast('Bitte von, bis und Schritt prüfen (0,5–60 kg)');
+    const n = Math.floor((b - a) / st + 1e-9) + 1; if (n > 120) return toast('Zu viele Stufen – bitte größeren Schritt wählen');
+    const add = []; for (let i = 0; i < n; i++) add.push(a + i * st);
+    S.weights = cleanWeights([...S.weights, ...add]); save(); render(); toast(n + ' Stufen hinzugefügt');
+  },
+  devexport: () => {
+    let ta;
+    const o = modal({
+      title: 'Export für Claude',
+      body: `<p class="muted small">Optional: Was soll Claude ändern oder ergänzen? Zum Beispiel neue Übungen, neue Hanteln, Probleme oder Wünsche.</p><label class="sr" for="devnote">Notizen</label><textarea id="devnote" rows="5" placeholder="z. B. Ich habe jetzt verstellbare Hanteln 2–20 kg. Bitte Übung … ergänzen."></textarea>`,
+      actions: [
+        { label: 'Als Datei speichern / teilen', primary: true, fn: () => deliverText(devExportText(ta.value), 'armwerk-fuer-claude-' + new Date().toISOString().slice(0, 10) + '.md') },
+        { label: 'Text kopieren', fn: () => copyText(devExportText(ta.value)) },
+        { label: 'Abbrechen' }
+      ]
+    });
+    ta = $('#devnote', o);
   },
   import: () => $('#file').click(),
   reset: () => modal({ title: 'Alle Daten löschen?', body: '<p>Alle Einheiten, Gewichte und Einstellungen werden von diesem Gerät entfernt. Das lässt sich nicht rückgängig machen. Exportiere vorher eine Sicherung.</p>', actions: [{ label: 'Alles löschen', danger: true, fn: () => { S = defaults(); W = null; save(); saveDraft(); toast('Daten gelöscht'); nav('home'); } }, { label: 'Abbrechen', primary: true }] })

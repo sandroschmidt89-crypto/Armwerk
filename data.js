@@ -9,7 +9,7 @@ const LEVELS = [
   { n: 3, title: 'Zweiter Satz', weeks: 'Woche 5–6', sets: 2, reps: [10, 12],
     note: 'Ein zweiter Satz kommt dazu, aber nur bei guter Verträglichkeit. Du solltest nach jedem Satz noch 2–3 Wiederholungen übrig haben.' },
   { n: 4, title: 'Aufbau', weeks: 'Woche 7–8', sets: 2, reps: [12, 15],
-    note: 'Zwei Sätze mit höheren Wiederholungen. Schaffst du sauber 15 Wiederholungen, darfst du das Gewicht um die kleinste Stufe erhöhen und wieder bei 12 beginnen.' }
+    note: 'Zwei Sätze mit höheren Wiederholungen. Schaffst du sauber 15 Wiederholungen, darfst du auf die nächste Hantel wechseln und wieder bei 12 beginnen.' }
 ];
 
 const WARMUP = [
@@ -32,7 +32,7 @@ const EX = {
     execution: 'Nur die Unterarme bewegen sich, die Oberarme bleiben ruhig. Tempo ca. 2 – 1 – 3 Sekunden (hoch – halten – runter). Kein Schwung.',
     mistakes: ['Schwung aus dem Oberkörper oder Rücken holen', 'Ellbogen wandern nach vorn', 'Handgelenke knicken ab', 'Schultern werden hochgezogen', 'Gewicht ist so schwer, dass die Technik leidet'],
     safety: ['Rücken bleibt an der Lehne, kein Hohlkreuz.', 'Arme unten nicht „durchfallen“ lassen, sondern abbremsen.', 'Bei Schmerzen im Ellbogen oder Handgelenk sofort stoppen.'],
-    weightGuide: 'Start mit 2 kg pro Hand (1 kg, falls 2 kg schon anstrengend wirkt). Mit den verstellbaren Hanteln später typischerweise 4–10 kg. Erhöhen nur in der kleinsten Stufe.'
+    weightGuide: 'Start mit 2 kg pro Hand (1 kg, falls 2 kg schon anstrengend wirkt). Mit den verstellbaren Hanteln später typischerweise 4–10 kg. Erhöhen nur auf die nächste verfügbare Hantel.'
   },
   tri: {
     id: 'tri', name: 'Trizeps-Überkopfstrecken sitzend',

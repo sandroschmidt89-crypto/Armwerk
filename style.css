@@ -179,3 +179,6 @@ a { color: var(--accent); }
 .breath[data-s="ein"] span { color: #6fb5ff; }
 .breath[data-s="aus"] span { color: var(--accent); }
 .breath[data-s="neutral"] span { color: var(--muted); font-weight: 500; }
+
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+textarea { font: inherit; color: var(--text); background: var(--card2); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; width: 100%; resize: vertical; }
