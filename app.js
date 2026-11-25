@@ -8,17 +8,22 @@ const $app = document.getElementById('app');
 const $tabs = document.getElementById('tabbar');
 
 /* ---------- Speicher ---------- */
-const APP_VERSION = '1.2';
-const defaults = () => ({ v: 1, sessions: [], level: 1, levelProg: 0, body: [], startTs: null, intro: false, weights: [1, 2], devExportTs: 0, prefs: { sound: true, vibrate: true } });
+const APP_VERSION = '1.4';
+const defaults = () => ({ v: 1, sessions: [], level: 1, levelProg: 0, body: [], startTs: null, intro: false, weights: [1, 2], setup: { on: true, bar: 0.2, plates: [{ w: 0.9, n: 4 }, { w: 1.25, n: 4 }], maxSide: 4 }, devExportTs: 0, prefs: { sound: true, vibrate: true } });
 let S = load();
 function cleanWeights(a) {
   const o = [...new Set((Array.isArray(a) ? a : []).map(Number).filter(x => isFinite(x) && x >= 0.5 && x <= 60).map(x => Math.round(x * 10) / 10))].sort((x, y) => x - y);
   return o.length ? o : [1, 2];
 }
+function cleanSetup(t) {
+  const d = defaults().setup; if (!t || typeof t !== 'object') return d;
+  const plates = (Array.isArray(t.plates) ? t.plates : []).map(p => ({ w: Math.round(+p.w * 100) / 100, n: Math.floor(+p.n) })).filter(p => p.w >= 0.25 && p.w <= 25 && p.n >= 1 && p.n <= 40);
+  return { on: t.on !== false, bar: t.bar >= 0 && t.bar <= 10 ? Math.round(+t.bar * 100) / 100 : d.bar, plates, maxSide: d.maxSide };
+}
 function load() {
   try {
     const r = JSON.parse(localStorage.getItem(KEY));
-    if (r && Array.isArray(r.sessions)) { const o = Object.assign(defaults(), r, { prefs: Object.assign(defaults().prefs, r.prefs || {}) }); o.weights = cleanWeights(r.weights || [1, 2]); return o; }
+    if (r && Array.isArray(r.sessions)) { const o = Object.assign(defaults(), r, { prefs: Object.assign(defaults().prefs, r.prefs || {}) }); o.weights = cleanWeights(r.weights || [1, 2]); o.setup = cleanSetup(r.setup); return o; }
   } catch (e) {}
   return defaults();
 }
@@ -32,6 +37,7 @@ const fmtD = ts => new Date(ts).toLocaleDateString('de-DE', { weekday: 'short', 
 const shortD = ts => new Date(ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
 const fmtDT = ts => new Date(ts).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const fmtKg = n => (Math.round(n * 10) / 10).toString().replace('.', ',') + ' kg';
+const num2 = n => (Math.round(n * 100) / 100).toString().replace('.', ',');
 const num = n => (Math.round(n * 10) / 10).toString().replace('.', ',');
 const mmss = ms => { const s = Math.ceil(ms / 1000); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -81,27 +87,55 @@ function lastEntries(exId) {
   return null;
 }
 /* Verfügbare Hanteln (pro Hand) */
-const avail = () => cleanWeights(S.weights);
-const nextUp = w => avail().find(x => x > w + 1e-9);
-const nextDown = w => [...avail()].reverse().find(x => x < w - 1e-9);
-function nearestStart(sw) { const a = avail(), b = a.filter(x => x <= sw + 1e-9); return b.length ? b[b.length - 1] : a[0]; }
+const avail = () => cleanWeights(S.weights);   // feste Hanteln und eigene Gewichte
+const ONE = { tri: true, row: true, wrist: true };   // Übungen mit nur einer Hantel in der Hand
+/* Aus Stange und Scheiben baubare Gewichte. Scheiben liegen auf beiden Seiten gleich.
+   sides = Anzahl Hantelseiten, auf die sich die Scheiben verteilen (Paar: 4, einzelne Hantel: 2). */
+function comboWeights(t, sides) {
+  const types = t.plates.map(p => ({ w: p.w, max: Math.floor(p.n / sides) })).filter(p => p.max > 0), out = new Set();
+  const rec = (i, cnt, sum) => {
+    if (i === types.length) { const w = Math.round((t.bar + 2 * sum) * 10) / 10; if (w >= 1) out.add(w); return; }
+    for (let c = 0; c <= types[i].max && cnt + c <= t.maxSide; c++) rec(i + 1, cnt + c, sum + c * types[i].w);
+  };
+  rec(0, 0, 0);
+  return [...out].sort((a, b) => a - b);
+}
+/* Beladungshinweis: wie das Gewicht aus Stange und Scheiben gebaut wird (nur für Set-Gewichte, nicht für feste Hanteln) */
+function loadHint(w, id) {
+  if (!(w > 0) || avail().some(x => Math.abs(x - w) < 1e-9)) return '';
+  const t = S.setup; if (!t || !t.on) return '';
+  const sides = ONE[id] ? 2 : 4, types = t.plates.map(p => ({ w: p.w, max: Math.floor(p.n / sides) })).filter(p => p.max > 0);
+  let best = null;
+  const rec = (i, ks, cnt, sum) => {
+    if (i === types.length) { if (cnt > 0 && Math.abs(Math.round((t.bar + 2 * sum) * 10) / 10 - w) < 1e-9 && (!best || cnt < best.cnt)) best = { ks, cnt }; return; }
+    for (let c = 0; c <= types[i].max && cnt + c <= t.maxSide; c++) rec(i + 1, [...ks, c], cnt + c, sum + c * types[i].w);
+  };
+  rec(0, [], 0, 0);
+  if (!best) return '';
+  return (ONE[id] ? '' : 'Beide Hanteln gleich · ') + 'je Seite: ' + types.map((p, i) => best.ks[i] ? best.ks[i] + ' × ' + num2(p.w) + ' kg' : '').filter(Boolean).join(' + ');
+}
+function setWeights() { const t = S.setup; return t && t.on && t.plates.length ? { pair: comboWeights(t, 4), one: comboWeights(t, 2) } : { pair: [], one: [] }; }
+const availFor = id => { const sw = setWeights(); return cleanWeights([...avail(), ...(ONE[id] ? sw.one : sw.pair)]); };
+const nextUp = (w, id) => availFor(id).find(x => x > w + 1e-9);
+const nextDown = (w, id) => [...availFor(id)].reverse().find(x => x < w - 1e-9);
+function nearestStart(sw, id) { const a = availFor(id), b = a.filter(x => x <= sw + 1e-9); return b.length ? b[b.length - 1] : a[0]; }
 const REP_CAP = 15;
 /* Vorschlag aus dem letzten Training – nur mit Gewichten, die du hast.
-   Steigerung erst, wenn das Ziel sauber erreicht wurde. Bei großen Sprüngen (>34 %) erst Wiederholungen bis 15. */
+   Steigerung erst, wenn das Ziel sauber erreicht wurde. Bei großen Sprüngen (>40 %) erst Wiederholungen bis 15. */
 function suggestWeight(exId, L = lvl()) {
   const ex = EX[exId], r = repsOf(ex, L), l = lastEntries(exId);
   if (ex.bw) { const lr = l ? Math.min(...l.entries.map(e => e.reps)) : r[1]; return { w: 0, reps: Math.max(r[0], Math.min(lr, 20)), range: r, note: '' }; }
-  if (!l) return { w: nearestStart(ex.startWeight), reps: r[1], range: r, note: 'Startgewicht – lieber zu leicht als zu schwer.' };
+  if (!l) return { w: nearestStart(ex.startWeight, exId), reps: r[1], range: r, note: 'Startgewicht – lieber zu leicht als zu schwer.' };
   const top = Math.max(...l.entries.map(e => e.weight));
   const es = l.entries.filter(e => e.weight === top);
   const lastReps = Math.min(...es.map(e => e.reps));
   const hard = es.some(e => e.effort === 'hart');
-  const tol = l.session.tolerance, up = nextUp(top), down = nextDown(top);
+  const tol = l.session.tolerance, up = nextUp(top, exId), down = nextDown(top, exId);
   if (tol === 'stark' || tol === 'schmerz') {
     if (down) return { w: down, reps: r[1], range: r, note: `Nach starkem Muskelkater bewusst leichter (${num(down)} kg).` };
     return { w: top, reps: Math.max(r[0], Math.min(lastReps, r[1])), range: r, note: 'Nach starkem Muskelkater vorsichtiger: lieber weniger Wiederholungen.' };
   }
-  const small = !!up && up / top <= 1.34;
+  const small = !!up && up / top <= 1.4;
   const goal = small ? r[1] : Math.max(r[1], REP_CAP);
   const done = lastReps >= goal && !hard && tol === 'gut';
   if (done && up) return { w: up, reps: r[0], range: r, note: `Alles geschafft und gut vertragen – nächste Hantel: ${num(up)} kg, starte mit ${r[0]} Wdh.` };
@@ -294,12 +328,21 @@ VIEWS.settings = () => `<button class="back" data-a="go" data-v="more">‹ Mehr<
 <label class="sw"><span>Vibration (falls unterstützt)</span><input type="checkbox" data-a="pref" data-k="vibrate" ${S.prefs.vibrate ? 'checked' : ''}></label>
 <button class="btn-block" data-a="testsound">Signal testen</button>
 <p class="small muted" style="margin:10px 0 0">Hinweis iPhone: Der Ton ist aus, wenn der Stumm-Schalter aktiv ist. Safari auf dem iPhone unterstützt keine Vibration, dort hilft der Ton.</p></div>
-<h2>Meine Hanteln</h2><div class="card"><p class="muted small">Gewicht pro Hand. Vorschläge und die Plus/Minus-Tasten im Training nutzen nur diese Gewichte. Zum Entfernen antippen.</p>
+<h2>Feste Hanteln</h2><div class="card"><p class="muted small">Gewicht pro Hand, auch für eigene Gewichte. Vorschläge und die Plus/Minus-Tasten im Training nutzen nur deine Gewichte. Zum Entfernen antippen.</p>
 <div class="chips">${avail().map(w => `<button class="chip" data-a="wdel" data-w="${w}" aria-label="${num(w)} kg entfernen">${num(w)} kg ✕</button>`).join('')}</div>
 <div class="row" style="margin-top:14px"><input id="wadd" type="text" inputmode="decimal" placeholder="Neue Hantel, z. B. 2,5" aria-label="Neue Hantel in kg"><button class="btn-primary" data-a="wadd">Hinzufügen</button></div>
 <p class="small muted" style="margin:14px 0 6px">Verstellbare Hantel: Bereich auf einmal hinzufügen</p>
 <div class="grid3"><input id="wfrom" type="text" inputmode="decimal" placeholder="von kg" aria-label="von kg"><input id="wto" type="text" inputmode="decimal" placeholder="bis kg" aria-label="bis kg"><input id="wstep" type="text" inputmode="decimal" placeholder="Schritt" aria-label="Schrittweite kg"></div>
 <button class="btn-block" data-a="wrange" style="margin-top:10px">Bereich hinzufügen</button></div>
+<h2>Verstellbares Hantelset</h2><div class="card">
+<label class="sw"><span>Set verwenden</span><input type="checkbox" data-a="seton" ${S.setup.on ? 'checked' : ''}></label>
+<p class="muted small">Die App rechnet aus Stange und Scheiben aus, welche Gewichte du bauen kannst. Scheiben kommen auf beiden Seiten gleich auf die Stange. Die Angaben sind ca.-Werte, wiege bei Bedarf nach und passe sie an.</p>
+<div class="small muted">Stange (je Hantel)</div>
+<div class="row" style="margin:6px 0 12px"><input id="barw" type="text" inputmode="decimal" value="${num2(S.setup.bar)}" aria-label="Gewicht einer Stange in kg"><button data-a="barset">Setzen</button></div>
+<div class="small muted">Scheiben</div>
+<div class="chips" style="margin:6px 0 10px">${S.setup.plates.map((p, i) => `<button class="chip" data-a="platedel" data-i="${i}" aria-label="Scheibe entfernen">${p.n} × ${num2(p.w)} kg ✕</button>`).join('') || '<span class="muted small">Keine Scheiben</span>'}</div>
+<div class="grid3"><input id="pw" type="text" inputmode="decimal" placeholder="kg" aria-label="Gewicht der Scheibe in kg"><input id="pn" type="text" inputmode="numeric" placeholder="Anzahl" aria-label="Anzahl der Scheiben"><button data-a="plateadd">Hinzufügen</button></div>
+<div style="margin-top:16px" class="small"><b>Daraus baubar</b>${S.setup.on ? (() => { const w = setWeights(); const f = a => a.length ? a.map(num).join(' · ') + ' kg' : 'nichts'; return `<p style="margin:6px 0">Zwei gleiche Hanteln (Curl, Hammer-Curl, Seitheben, Schulterdrücken, Reverse-Fly):<br><b>${f(w.pair)}</b></p><p style="margin:6px 0 0">Eine Hantel (Trizeps, Rudern, Handgelenk):<br><b>${f(w.one)}</b></p>`; })() : '<p class="muted" style="margin:6px 0 0">Set ist ausgeschaltet.</p>'}</div></div>
 <h2>Weiterentwicklung mit Claude</h2><div class="card"><p class="muted small">Erstellt eine Datei mit allen neuen Einträgen, deinem aktuellen Stand und einer fertigen Anweisung. Hänge sie in einem neuen Chat an Claude an.</p>
 <p class="small" style="margin:0 0 10px">${S.devExportTs ? 'Letzter Export: ' + fmtDT(S.devExportTs) + ' · ' : 'Noch nie exportiert · '}<b>${S.sessions.filter(x => x.ts > (S.devExportTs || 0)).length} neue Einheiten</b></p>
 <button class="btn-primary btn-block" data-a="devexport">Export für Claude erstellen</button></div>
@@ -333,7 +376,7 @@ VIEWS.workout = () => {
   if (W.phase === 'ex') {
     const st = W.steps[W.idx], ex = EX[st.ex], r = W.curRange || repsOf(ex, LEVELS[W.level - 1]), last = lastEntries(st.ex);
     const lastTxt = last ? 'Letztes Mal: ' + (ex.bw ? '' : last.entries.map(e => num(e.weight)).filter((v, i, a) => a.indexOf(v) === i).join('/') + ' kg · ') + last.entries.map(e => e.reps).join('/') + ' Wdh. (' + shortD(last.session.ts) + ')' : 'Erste Durchführung';
-    const sp = (a, v, l, aria) => `<div class="card sp"><div class="val"><b id="${a === 'reps' ? 'repv' : 'wtv'}">${v}</b><span>${l}</span></div><div class="grid2"><button data-a="${a}" data-d="-1" aria-label="${aria} weniger">−</button><button data-a="${a}" data-d="1" aria-label="${aria} mehr">+</button></div></div>`;
+    const sp = (a, v, l, aria) => `<div class="card sp"><div class="val"><b id="${a === 'reps' ? 'repv' : 'wtv'}">${v}</b><span>${l}</span>${a === 'wt' ? `<span class="hint" id="wth">${esc(loadHint(W.cur.weight, st.ex))}</span>` : ''}</div><div class="grid2"><button data-a="${a}" data-d="-1" aria-label="${aria} weniger">−</button><button data-a="${a}" data-d="1" aria-label="${aria} mehr">+</button></div></div>`;
     return head() + `<div class="muted small">Übung ${TRAININGS[W.type].ex.indexOf(st.ex) + 1}/${TRAININGS[W.type].ex.length} · Satz ${st.set}/${st.of}${UNI[st.ex] ? ' · je Seite' : ''}</div><h1 class="h1s">${esc(ex.name)}</h1>
     ${animHtml(st.ex, 175)}
     <p class="tgt"><b>Ziel: ${r[0]}–${r[1]} Wdh.</b><br><span class="muted small">${esc(lastTxt)}${W.curNote ? ' · ' + esc(W.curNote) : ''}</span></p>
@@ -451,7 +494,7 @@ Du bist mein Entwickler und Trainingsberater für meine private Home-Workout-App
 **Deine Aufgaben:**
 1. Lies „Meine Notizen“ und setze die Wünsche um. Wenn etwas unklar ist, frage kurz nach, bevor du etwas baust.
 2. Werte die neuen Einheiten aus: Wiederholungen, Gewichte, Anstrengung, Verträglichkeit, Dauer. Sag knapp, ob Plan, Stufen oder Vorschlagslogik angepasst werden sollten, und begründe es.
-3. Berücksichtige ausschließlich meine verfügbaren Hanteln (siehe unten).
+3. Berücksichtige ausschließlich meine verfügbaren Gewichte (siehe unten, feste Hanteln plus baubare Gewichte aus dem Set).
 4. Bei neuen Übungen: ergänze data.js (Name, Muskeln, Ausgangsposition, Schritte, Atmung, Fehler, Sicherheit, Start, Pause, Gewichtsangabe) und anim.js (Animation), und nimm sie in Training A oder B auf, ohne die 20 Minuten zu sprengen.
 5. Liefere geänderte Dateien vollständig, teste sie (Browser-Test, Timer, Ablauf, Speicherung) und erhöhe in sw.js die CACHE-Version. Sage mir genau, welche Dateien ich im Repository ersetzen muss.
 
@@ -464,12 +507,15 @@ ${note && note.trim() ? note.trim() : '(keine)'}
 - Stufe ${S.level} von 4 („${L.title}“, ${L.sets} Satz/Sätze, ${L.reps[0]}–${L.reps[1]} Wdh.), gut vertragen in dieser Stufe: ${S.levelProg}/4
 - Einheiten gesamt: ${sess.filter(x => x.completed).length} (abgeschlossen), davon neu seit letztem Export: ${fresh.length}
 - Startdatum: ${S.startTs ? new Date(S.startTs).toISOString().slice(0, 10) : 'noch nicht gestartet'}
-- **Verfügbare Hanteln (pro Hand):** ${avail().map(w => num(w) + ' kg').join(', ')}
+- **Feste Hanteln (pro Hand):** ${avail().map(w => num(w) + ' kg').join(', ')}
+- **Verstellbares Hantelset** (${S.setup.on ? 'in der App aktiv' : 'in der App ausgeschaltet'}): Stange je ${num2(S.setup.bar)} kg, Scheiben ${S.setup.plates.map(p => p.n + '×' + num2(p.w) + ' kg').join(', ') || 'keine'}; Scheiben immer beidseitig gleich, max. ${S.setup.maxSide} Scheiben pro Seite.
+- **Daraus baubar:** zwei gleiche Hanteln ${setWeights().pair.map(num).join(', ') || '–'} kg; eine Hantel (Trizeps, Rudern, Handgelenk) ${setWeights().one.map(num).join(', ') || '–'} kg
+- Weitere Teile des Sets, bisher **nicht** in der App genutzt: Verbinderstange zur Langhantel (ca. 0,5 kg), Stange für Kettlebell mit Griff (ca. 0,5 kg), 2 Griffe für Kettlebell oder Liegestütz, 4 Feststellschrauben
 - Körpergewicht: ${body.length ? body.map(b => new Date(b.ts).toISOString().slice(0, 10) + ' ' + num(b.kg) + ' kg').join(' · ') : 'keine Einträge'}
 
 ## Regeln der Vorschlagslogik (aktuell in app.js)
 - Stufe steigt erst nach 4 gut vertragenen Einheiten (Verträglichkeit wird am nächsten Trainingstag abgefragt). Starker Muskelkater oder Schmerz setzt den Zähler zurück.
-- Gewicht steigt nur auf die nächste verfügbare Hantel, wenn alle Wiederholungen das Ziel erreicht haben, die Anstrengung nicht „hart“ war und die Einheit gut vertragen wurde. Bei Sprüngen über 34 % (z. B. 1 → 2 kg) zählt erst 15 Wiederholungen als Ziel.
+- Gewicht steigt nur auf die nächste verfügbare Hantel, wenn alle Wiederholungen das Ziel erreicht haben, die Anstrengung nicht „hart“ war und die Einheit gut vertragen wurde. Bei Sprüngen über 40 % (z. B. 1 → 2 kg oder 2,7 → 4,5 kg) zählt erst 15 Wiederholungen als Ziel.
 - Ohne schwerere Hantel gilt: Gewicht gleich lassen, Wiederholungen steigern bis 15.
 
 ## Neue Einheiten seit letztem Export (${fresh.length})
@@ -516,9 +562,9 @@ const A = {
   warmdone: () => { unlockAudio(); W.phase = 'ex'; prepCur(); saveDraft(); render(); },
   reps: d => { W.cur.reps = Math.max(0, Math.min(40, W.cur.reps + +d.d)); $('#repv').textContent = W.cur.reps; saveDraft(); },
   wt: d => {
-    const cur = W.cur.weight, list = [...new Set([...avail(), cur])].sort((a, b) => a - b), k = list.indexOf(cur), nx = list[k + +d.d];
+    const cur = W.cur.weight, list = [...new Set([...availFor(W.steps[W.idx].ex), cur])].sort((a, b) => a - b), k = list.indexOf(cur), nx = list[k + +d.d];
     if (nx === undefined) return toast(+d.d > 0 ? 'Keine schwerere Hantel hinterlegt (Mehr → Einstellungen)' : 'Keine leichtere Hantel hinterlegt');
-    W.cur.weight = nx; $('#wtv').textContent = num(nx); saveDraft();
+    W.cur.weight = nx; $('#wtv').textContent = num(nx); const h = $('#wth'); if (h) h.textContent = loadHint(nx, W.steps[W.idx].ex); saveDraft();
   },
   wdetail: () => modal({ title: EX[W.steps[W.idx].ex].name, body: exDetailHtml(EX[W.steps[W.idx].ex].id).replace(/^<h1>.*?<\/h1>/, ''), actions: [{ label: 'Schließen', primary: true }] }),
   setdone: () => {
@@ -569,6 +615,19 @@ const A = {
     } catch (e) {}
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast('Export erstellt');
+  },
+  seton: (d, e) => { S.setup.on = e.target.checked; save(); render(); },
+  barset: () => {
+    const v = parseFloat(($('#barw').value || '').replace(',', '.'));
+    if (!(v >= 0 && v <= 10)) return toast('Bitte ein Gewicht zwischen 0 und 10 kg eingeben');
+    S.setup.bar = Math.round(v * 100) / 100; save(); render(); toast('Stange gespeichert');
+  },
+  platedel: d => { S.setup.plates.splice(+d.i, 1); save(); render(); },
+  plateadd: () => {
+    const w = parseFloat(($('#pw').value || '').replace(',', '.')), n = parseInt($('#pn').value || '', 10);
+    if (!(w >= 0.25 && w <= 25 && n >= 1 && n <= 40)) return toast('Bitte Gewicht (0,25–25 kg) und Anzahl (1–40) eingeben');
+    const ex = S.setup.plates.find(p => Math.abs(p.w - w) < 1e-9); if (ex) ex.n = n; else S.setup.plates.push({ w: Math.round(w * 100) / 100, n });
+    S.setup.plates.sort((a, b) => a.w - b.w); save(); render(); toast('Scheibe gespeichert');
   },
   wadd: () => {
     const v = parseFloat(($('#wadd').value || '').replace(',', '.'));

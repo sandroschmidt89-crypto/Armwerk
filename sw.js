@@ -1,5 +1,5 @@
 'use strict';
-const CACHE = 'armwerk-v5';
+const CACHE = 'armwerk-v7';
 const FILES = ['./', 'index.html', 'style.css', 'data.js', 'anim.js', 'app.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 
